@@ -1,0 +1,274 @@
+let options = `<option value="">-- Aventure à traduire --</option>`;
+game.packs.forEach(({ metadata: { id, label, type } }) =>
+  "Adventure" === type
+    ? (options += `<option value="${id}">${label}</option>`)
+    : null
+);
+
+new Dialog({
+  title: "Exporter le JSON de traduction d’une aventure",
+  content: `
+  <form>
+    <p>Sélectionnez une aventure :</p>
+    <p><select id="avId">${options}</select></p>
+  </form>`,
+  buttons: {
+    yes: {
+      icon: `<i class="fas fa-check"></i>`,
+      label: "Exporter",
+      callback: async (html) => {
+        const packId = html[0].querySelector("#avId").value;
+
+        if ("" === packId) {
+          return ui.notifications.error("Merci de choisir une aventure.");
+        }
+
+        ui.notifications.info(
+          "Export en cours, merci de patienter. Le traitement peut être assez long selon la taille de l’aventure."
+        );
+
+        await exportAv(packId);
+      },
+    },
+  },
+  default: "yes",
+}).render(true);
+
+async function exportAv(id) {
+  const av = game.packs.get(id);
+
+  const adventurePack = await av.getDocument([...av.index][0]._id);
+
+  const dataset = {};
+
+  // Structure de base
+  dataset.label = adventurePack.name;
+  dataset.mapping = {
+    actors: {
+      description: "system.description",
+      rank: "system.rank",
+    },
+    items: {
+      description: "system.description",
+      skills: "system.skills",
+      work_points: "system.work_points",
+      dev_requirement: "system.dev_requirement",
+      DEV_requirement: "system.DEV_Requirement",
+      other_requirements: "system.other_requirements",
+      dev_bonus: "system.dev_bonus",
+      DEV_bonus: "system.DEV_Bonus",
+      comment: "system.comment",
+      lethal: "system.lethal",
+      timeLimit: "system.timeLimit",
+      effect: "system.effect",
+      special: "system.special",
+      healingTime: "system.healingTime",
+    }
+  };
+  
+  dataset.entries = {
+    [adventurePack.name]: {
+      name: adventurePack.name,
+      description: adventurePack.description,
+      caption: adventurePack.caption,
+      scenes: {},
+      macros: {},
+      playlists: {},
+      actors: {},
+      items: {},
+      tables: {},
+      folders: {},
+      journals: {},
+      cards: {},
+    },
+  };
+
+  // Scenes
+  adventurePack.scenes.forEach(
+    ({ name }) => (dataset.entries[adventurePack.name].scenes[name] = { name })
+  );
+
+  // Macros
+  adventurePack.macros.forEach(
+    ({ name }) => (dataset.entries[adventurePack.name].macros[name] = { name })
+  );
+
+  // Playlists
+  adventurePack.playlists.forEach(
+    ({ name, description }) =>
+      (dataset.entries[adventurePack.name].playlists[name] = {
+        name,
+        description,
+      })
+  );
+
+  // Actors
+  adventurePack.actors.forEach((actor) => {
+    const actorDataset = {};
+    actorDataset["name"] = actor.name;
+    actorDataset["tokenName"] = actor.name;
+
+    Object.keys(dataset.mapping.actors).forEach((key) => {
+      const mappingKeyList = dataset.mapping.actors[key].split(".");
+      let mappingValue = actor;
+      let index = 0;
+
+      while (
+        index < mappingKeyList.length &&
+        Object.keys(mappingValue).includes(mappingKeyList[index])
+      ) {
+        mappingValue = mappingValue[mappingKeyList[index]];
+        index++;
+      }
+      mappingValue?.length
+        ? (actorDataset[`${key}`] = `${mappingValue}`)
+        : null;
+    });
+
+    const actorItemsDataset = {};
+    actor.items.forEach((item) => {
+      const itemDataset = {};
+      itemDataset["name"] = item.name;
+
+      Object.keys(dataset.mapping.items).forEach((key) => {
+        const mappingKeyList = dataset.mapping.items[key].split(".");
+        let mappingValue = item;
+        let index = 0;
+
+        while (
+          index < mappingKeyList.length &&
+          Object.keys(mappingValue).includes(mappingKeyList[index])
+        ) {
+          mappingValue = mappingValue[mappingKeyList[index]];
+          index++;
+        }
+        mappingValue?.length
+          ? (itemDataset[`${key}`] = `${mappingValue}`)
+          : null;
+      });
+
+      actorItemsDataset[`${item.name}`] = itemDataset;
+    });
+
+    actorDataset["items"] = actorItemsDataset;
+    dataset.entries[adventurePack.name].actors[actor.name] = actorDataset;
+  });
+
+  // Items
+  adventurePack.items.forEach((item) => {
+    const itemDataset = {};
+    itemDataset["name"] = item.name;
+
+    Object.keys(dataset.mapping.items).forEach((key) => {
+      const mappingKeyList = dataset.mapping.items[key].split(".");
+      let mappingValue = item;
+      let index = 0;
+
+      while (
+        index < mappingKeyList.length &&
+        Object.keys(mappingValue).includes(mappingKeyList[index])
+      ) {
+        mappingValue = mappingValue[mappingKeyList[index]];
+        index++;
+      }
+
+      mappingValue?.length ? (itemDataset[`${key}`] = `${mappingValue}`) : null;
+    });
+
+    dataset.entries[adventurePack.name].items[`${item.name}`] = itemDataset;
+  });
+
+  adventurePack.actors.forEach((actor) => {
+    actor.items.forEach((item) => {
+      // L'Item déjà présent dans la liste des "items" (i.e. équipements ...).
+      //Recréer un item à l'aide de son ID (i.e. en cas de spécificités)???
+      //Bonne question ...
+      if (dataset.entries[adventurePack.name].items[`${item.name}`]) return;
+
+      const itemDataset = {};
+      itemDataset["name"] = `${item.name}`;
+
+      Object.keys(dataset.mapping.items).forEach((key) => {
+        const mappingKeyList = dataset.mapping.items[key].split(".");
+        let mappingValue = item;
+        let index = 0;
+
+        while (
+          index < mappingKeyList.length &&
+          Object.keys(mappingValue).includes(mappingKeyList[index])
+        ) {
+          mappingValue = mappingValue[mappingKeyList[index]];
+          index++;
+        }
+
+        mappingValue?.length
+          ? (itemDataset[`${key}`] = `${mappingValue}`)
+          : null;
+      });
+
+      dataset.entries[adventurePack.name].items[`${item.name}`] = itemDataset;
+    });
+  });
+
+  // Tables
+  adventurePack.tables.forEach(({ name, description, results }) => {
+    const resultsDataset = {};
+
+    results.forEach(
+      ({ range, text }) => (resultsDataset[`${range[0]}-${range[1]}`] = text)
+    );
+
+    dataset.entries[adventurePack.name].tables[name] = {
+      name,
+      description,
+      results: resultsDataset,
+    };
+  });
+
+  // Folders
+  adventurePack.folders.forEach(
+    ({ name }) => (dataset.entries[adventurePack.name].folders[name] = name)
+  );
+
+  // Journals
+  adventurePack.journal.forEach(({ name, pages }) => {
+    const pagesDataset = {};
+
+    pages.forEach(
+      ({ name, text: { content: text } }) =>
+        (pagesDataset[name] = { name, text })
+    );
+
+    dataset.entries[adventurePack.name].journals[name] = {
+      name,
+      pages: pagesDataset,
+    };
+  });
+
+  // Cards
+  adventurePack.cards.forEach(({ name, description, cards }) => {
+    const cardsDataset = {};
+
+    cards.forEach(
+      ({ name, description, faces, back }) =>
+        (cardsDataset[name] = { name, description, back, faces })
+    );
+
+    dataset.entries[adventurePack.name].cards[name] = {
+      name,
+      description,
+      cards: cardsDataset,
+    };
+  });
+
+  const dataStr = JSON.stringify(dataset, null, "\t");
+  const exportFileDefaultName = `${id}.json`;
+
+  const zip = new JSZip();
+  zip.file(exportFileDefaultName, dataStr);
+  zip.generateAsync({ type: "blob" }).then((content) => {
+    saveAs(content, `${id}.zip`);
+  });
+
+  ui.notifications.info("Export terminé !");
+}
